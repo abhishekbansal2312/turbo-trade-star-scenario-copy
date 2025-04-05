@@ -1,0 +1,25 @@
+2025-04-03 21:39:07,526 - INFO - Starting data migration process
+2025-04-03 21:39:07,526 - INFO - Successfully connected to SQLite database
+2025-04-03 21:39:07,579 - INFO - Successfully connected to Supabase
+2025-04-03 21:39:07,579 - INFO - OptionsTick columns: ['ContractId', 'DateTime', 'Open', 'High', 'Low', 'Close', 'Volume', 'OI']
+2025-04-03 21:39:07,579 - INFO - OptionsContract columns: ['Id', 'ExpiryDate', 'Type', 'StrikePrice', 'Symbol']
+2025-04-03 21:39:07,588 - INFO - Table OptionsTick contains 1048463 rows
+2025-04-03 21:39:07,588 - INFO - Extracting equity data...
+2025-04-03 21:39:07,894 - INFO - Extracted 409410 equity data records
+2025-04-03 21:39:07,894 - INFO - Extracting options contract data...
+2025-04-03 21:39:07,895 - INFO - Retrieved 493 options contracts
+2025-04-03 21:39:07,895 - INFO - Extracting options tick data in chunks...
+2025-04-03 21:39:09,797 - INFO - Retrieved 1048463 options ticks
+2025-04-03 21:39:09,797 - INFO - Processing and joining options data...
+2025-04-03 21:39:10,005 - INFO - Processed 1048463 option data records
+2025-04-03 21:39:10,011 - INFO - SQLite data extraction completed and connection closed
+2025-04-03 21:39:10,011 - INFO - Uploading data to equity_data...
+2025-04-03 21:39:10,032 - WARNING - Upload failed for batch 1/410. Retrying (1/3)... Error: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:12,039 - WARNING - Upload failed for batch 1/410. Retrying (2/3)... Error: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:14,046 - ERROR - Failed to upload batch 1/410 after 3 attempts: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:14,048 - INFO - Uploading data to option_data...
+2025-04-03 21:39:14,055 - WARNING - Upload failed for batch 1/1049. Retrying (1/3)... Error: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:16,063 - WARNING - Upload failed for batch 1/1049. Retrying (2/3)... Error: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:18,070 - ERROR - Failed to upload batch 1/1049 after 3 attempts: Object of type Timestamp is not JSON serializable
+2025-04-03 21:39:18,072 - WARNING - Data migration completed with some issues. Check the logs for details.
+2025-04-03 21:39:18,072 - INFO - Total migration time: 10.55 seconds

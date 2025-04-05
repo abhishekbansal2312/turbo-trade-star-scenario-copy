@@ -1,0 +1,6 @@
+pandas
+fastapi
+pydantic
+matplotlib
+streamlit
+uvicorn

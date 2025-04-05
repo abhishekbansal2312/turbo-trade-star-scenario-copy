@@ -1,0 +1,13 @@
+.venv
+.vscode
+todo.txt
+
+*/sample_data.csv
+data/sqlite/
+data/stocks/
+**/__pycache__/
+tests/_trial_temp/
+**/.DS_Store
+new_backtest/backtest_results/
+.idea/
+.results/
