@@ -101,7 +101,7 @@ def run_backtest(config: BacktestConfigModel):
             pnl = round(exit_price - entry_price, 2)
             pnl_pct = round((pnl / entry_price) * 100, 2)
             
-            # Create trade object
+            # Create trade object - using string representation of dates to avoid serialization issues
             trade = {
                 "trade_id": i + 1,
                 "entry_date": entry_date.strftime("%Y-%m-%d"),
@@ -126,6 +126,11 @@ def run_backtest(config: BacktestConfigModel):
         }
             
     except Exception as e:
+        # Log the actual exception for debugging
+        import traceback
+        print(f"Error in run_backtest: {str(e)}")
+        print(traceback.format_exc())
+        
         # Return error but still with a valid structure
         return {
             "metrics": {"error": str(e)},
