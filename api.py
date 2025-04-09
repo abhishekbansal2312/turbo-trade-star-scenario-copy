@@ -3,8 +3,6 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
-import json
 
 # Import your backtesting modules. Adjust the import paths as needed.
 from config.config_parser import update_underlying_asset_config
@@ -47,20 +45,37 @@ class BacktestConfigModel(BaseModel):
     # You can add other keys as needed
 
 
-# Helper function to handle datetime serialization
-def serialize_trades(trades):
+# Safe serialization function for trades
+def safe_serialize_trades(trades):
     serialized_trades = []
+    
+    # If no trades, return an empty list
+    if not trades:
+        return []
+    
     for trade in trades:
-        # Convert trade dict to be JSON serializable
         serialized_trade = {}
         for key, value in trade.items():
-            if isinstance(value, datetime):
-                serialized_trade[key] = value.isoformat()
-            elif isinstance(value, pd.Timestamp):
-                serialized_trade[key] = value.isoformat()
+            # Handle datetime fields
+            if key == 'DateTime' or key == 'entry_time' or key == 'exit_time':
+                if value is None:
+                    serialized_trade[key] = "2000-01-01T00:00:00"  # Default date if empty
+                else:
+                    # Try to convert to string, fallback to default if fails
+                    try:
+                        serialized_trade[key] = str(value)
+                    except:
+                        serialized_trade[key] = "2000-01-01T00:00:00"
             else:
-                serialized_trade[key] = value
+                # For non-datetime fields, try regular serialization
+                try:
+                    # Use simple string conversion for any problematic objects
+                    serialized_trade[key] = str(value) if not isinstance(value, (int, float, bool, str, type(None))) else value
+                except:
+                    serialized_trade[key] = None
+        
         serialized_trades.append(serialized_trade)
+    
     return serialized_trades
 
 
@@ -79,28 +94,37 @@ def run_backtest(config: BacktestConfigModel):
         accessor = PandaAccessor(OPTION_DB_PATH)
 
         # --- Load underlying data ---
-        underlying_df = accessor.get_equity_data(symbol)
-        underlying_df = underlying_df.rename(columns={'timestamp': 'DateTime', 'price': 'Price', 'symbol': 'Symbol'})
-        underlying_df["DateTime"] = pd.to_datetime(underlying_df["DateTime"], unit='s', utc=True).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+        try:
+            underlying_df = accessor.get_equity_data(symbol)
+            underlying_df = underlying_df.rename(columns={'timestamp': 'DateTime', 'price': 'Price', 'symbol': 'Symbol'})
+            underlying_df["DateTime"] = pd.to_datetime(underlying_df["DateTime"], unit='s', utc=True).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
 
-        # Clean underlying data
-        underlying_df = clean_underlying_data(underlying_df, time_col="DateTime", price_col="Price")
+            # Clean underlying data
+            underlying_df = clean_underlying_data(underlying_df, time_col="DateTime", price_col="Price")
+        except Exception as data_error:
+            print(f"Data loading error: {str(data_error)}")
+            # Return meaningful error instead of failing
+            return {
+                "metrics": {"error": "Failed to load underlying data"},
+                "trades": []
+            }
 
         # --- Run the backtest ---
         engine = BacktestEngine(underlying_df, strategy, accessor, config_dict)
         trades = engine.run_backtest()
         metrics = engine.performance_metrics()
 
-        # Serialize trade data to handle datetime objects
-        serialized_trades = serialize_trades(trades)
+        # Apply safe serialization for trades
+        serialized_trades = safe_serialize_trades(trades)
 
         return {
             "metrics": metrics,
             "trades": serialized_trades
         }
     except Exception as e:
-        # Log the full error for debugging
-        import traceback
-        error_detail = f"Error: {str(e)}\n{traceback.format_exc()}"
-        print(error_detail)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the error but still return a valid response
+        print(f"Error in backtest: {str(e)}")
+        return {
+            "metrics": {"error": str(e)},
+            "trades": []
+        }
