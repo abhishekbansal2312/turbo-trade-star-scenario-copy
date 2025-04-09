@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import pandas as pd
-from fastapi.middleware.cors import CORSMiddleware  # Import CORS middleware
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+import json
 
 # Import your backtesting modules. Adjust the import paths as needed.
 from config.config_parser import update_underlying_asset_config
@@ -45,6 +47,23 @@ class BacktestConfigModel(BaseModel):
     # You can add other keys as needed
 
 
+# Helper function to handle datetime serialization
+def serialize_trades(trades):
+    serialized_trades = []
+    for trade in trades:
+        # Convert trade dict to be JSON serializable
+        serialized_trade = {}
+        for key, value in trade.items():
+            if isinstance(value, datetime):
+                serialized_trade[key] = value.isoformat()
+            elif isinstance(value, pd.Timestamp):
+                serialized_trade[key] = value.isoformat()
+            else:
+                serialized_trade[key] = value
+        serialized_trades.append(serialized_trade)
+    return serialized_trades
+
+
 @app.post("/run_backtest")
 def run_backtest(config: BacktestConfigModel):
     try:
@@ -57,7 +76,6 @@ def run_backtest(config: BacktestConfigModel):
         strategy = create_strategy_from_config(config_dict)
 
         # --- Instantiate Data Accessor ---
-        # Update the DB path accordingly
         accessor = PandaAccessor(OPTION_DB_PATH)
 
         # --- Load underlying data ---
@@ -73,18 +91,16 @@ def run_backtest(config: BacktestConfigModel):
         trades = engine.run_backtest()
         metrics = engine.performance_metrics()
 
-        # # --- Generate the plot ---
-        # # Ensure your plot_results method returns a matplotlib figure when return_fig=True.
-        # fig = engine.plot_results(return_fig=True)
-        # buf = io.BytesIO()
-        # fig.savefig(buf, format="png")
-        # buf.seek(0)
-        # img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        # Serialize trade data to handle datetime objects
+        serialized_trades = serialize_trades(trades)
 
         return {
             "metrics": metrics,
-            "trades": trades,
-            # "plot": img_base64
+            "trades": serialized_trades
         }
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        error_detail = f"Error: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
         raise HTTPException(status_code=500, detail=str(e))
