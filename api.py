@@ -3,32 +3,38 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from fastapi.middleware.cors import CORSMiddleware
-import random
-from datetime import datetime, timedelta
 
-# Import only what we need
+# Import your backtesting modules. Adjust the import paths as needed.
 from config.config_parser import update_underlying_asset_config
+from data.constants import OPTION_DB_PATH
+from main import create_strategy_from_config
+from engine.backtest_engine import BacktestEngine
+from data.panda import PandaAccessor
+from utils.data_cleaning import clean_underlying_data
 
 app = FastAPI(title="Turbo Trade Backtesting API")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the Turbo Trade Backtesting API!"}
 
+
+# Define Pydantic models for configuration
 class OptionLegModel(BaseModel):
     type: str
     action: str
     strike_selection: Dict[str, Any]
     lots: int
+
 
 class BacktestConfigModel(BaseModel):
     underlying_asset: Dict[str, Any]
@@ -36,102 +42,88 @@ class BacktestConfigModel(BaseModel):
     entry_conditions: Dict[str, Any]
     exit_conditions: Dict[str, Any]
     backtest_settings: Dict[str, Any]
+    # You can add other keys as needed
+
+
+# Safe serialization function for trades
+def safe_serialize_trades(trades):
+    serialized_trades = []
+    
+    # If no trades, return an empty list
+    if not trades:
+        return []
+    
+    for trade in trades:
+        serialized_trade = {}
+        for key, value in trade.items():
+            # Handle datetime fields
+            if key == 'DateTime' or key == 'entry_time' or key == 'exit_time':
+                if value is None:
+                    serialized_trade[key] = "2000-01-01T00:00:00"  # Default date if empty
+                else:
+                    # Try to convert to string, fallback to default if fails
+                    try:
+                        serialized_trade[key] = str(value)
+                    except:
+                        serialized_trade[key] = "2000-01-01T00:00:00"
+            else:
+                # For non-datetime fields, try regular serialization
+                try:
+                    # Use simple string conversion for any problematic objects
+                    serialized_trade[key] = str(value) if not isinstance(value, (int, float, bool, str, type(None))) else value
+                except:
+                    serialized_trade[key] = None
+        
+        serialized_trades.append(serialized_trade)
+    
+    return serialized_trades
+
 
 @app.post("/run_backtest")
 def run_backtest(config: BacktestConfigModel):
     try:
-        # Extract config for generating simulated results
+        # Convert the Pydantic model to a dictionary
         config_dict = config.dict()
         config_dict = update_underlying_asset_config(config_dict)
-        
-        # Extract some parameters for simulation
         symbol = config_dict["underlying_asset"]["symbol"]
-        start_date_str = config_dict["backtest_settings"].get("start_date", "2023-01-01")
-        end_date_str = config_dict["backtest_settings"].get("end_date", "2023-12-31")
-        
-        # Convert dates for simulation
+
+        # Create the strategy object from config
+        strategy = create_strategy_from_config(config_dict)
+
+        # --- Instantiate Data Accessor ---
+        accessor = PandaAccessor(OPTION_DB_PATH)
+
+        # --- Load underlying data ---
         try:
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
-        except:
-            # Use defaults if date parsing fails
-            start_date = datetime(2023, 1, 1)
-            end_date = datetime(2023, 12, 31)
-        
-        # Generate simulated metrics
-        simulated_metrics = {
-            "total_return": round(random.uniform(5.0, 25.0), 2),
-            "annualized_return": round(random.uniform(4.0, 20.0), 2),
-            "sharpe_ratio": round(random.uniform(0.8, 2.5), 2),
-            "max_drawdown": round(random.uniform(-20.0, -5.0), 2),
-            "win_rate": round(random.uniform(50.0, 80.0), 2),
-            "profit_factor": round(random.uniform(1.2, 2.5), 2),
-            "symbol": symbol
-        }
-        
-        # Generate simulated trades
-        simulated_trades = []
-        
-        # Number of trades to generate
-        num_trades = random.randint(5, 15)
-        
-        # Generate random trades between start and end dates
-        current_date = start_date
-        for i in range(num_trades):
-            # Random entry date
-            entry_date = current_date + timedelta(days=random.randint(1, 10))
-            if entry_date > end_date:
-                break
-                
-            # Random exit date after entry
-            exit_date = entry_date + timedelta(days=random.randint(1, 7))
-            if exit_date > end_date:
-                exit_date = end_date
-            
-            # Generate random prices
-            entry_price = round(random.uniform(100.0, 150.0), 2)
-            
-            # 70% chance of profit
-            if random.random() < 0.7:
-                exit_price = round(entry_price * (1 + random.uniform(0.01, 0.08)), 2)
-            else:
-                exit_price = round(entry_price * (1 - random.uniform(0.01, 0.05)), 2)
-            
-            # Calculate P&L
-            pnl = round(exit_price - entry_price, 2)
-            pnl_pct = round((pnl / entry_price) * 100, 2)
-            
-            # Create trade object - using string representation of dates to avoid serialization issues
-            trade = {
-                "trade_id": i + 1,
-                "entry_date": entry_date.strftime("%Y-%m-%d"),
-                "entry_time": entry_date.strftime("%H:%M:%S"),
-                "entry_price": entry_price,
-                "exit_date": exit_date.strftime("%Y-%m-%d"),
-                "exit_time": exit_date.strftime("%H:%M:%S"),
-                "exit_price": exit_price,
-                "pnl": pnl,
-                "pnl_pct": pnl_pct,
-                "option_type": config_dict["legs"][0]["type"] if config_dict["legs"] else "CE",
-                "action": config_dict["legs"][0]["action"] if config_dict["legs"] else "BUY"
+            underlying_df = accessor.get_equity_data(symbol)
+            underlying_df = underlying_df.rename(columns={'timestamp': 'DateTime', 'price': 'Price', 'symbol': 'Symbol'})
+            underlying_df["DateTime"] = pd.to_datetime(underlying_df["DateTime"], unit='s', utc=True).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+
+            # Clean underlying data
+            underlying_df = clean_underlying_data(underlying_df, time_col="DateTime", price_col="Price")
+        except Exception as data_error:
+            print(f"Data loading error: {str(data_error)}")
+            # Return meaningful error instead of failing
+            return {
+                "metrics": {"error": "Failed to load underlying data"},
+                "trades": []
             }
-            
-            simulated_trades.append(trade)
-            current_date = exit_date
-        
-        # Return simulated results
+
+        # --- Run the backtest ---
+        engine = BacktestEngine(underlying_df, strategy, accessor, config_dict)
+        trades = engine.run_backtest()
+        metrics = engine.performance_metrics()
+
+        # Apply safe serialization for trades
+        serialized_trades = safe_serialize_trades(trades)
+
         return {
-            "metrics": simulated_metrics,
-            "trades": simulated_trades
+            "metrics": metrics,
+            "trades": serialized_trades
         }
-            
     except Exception as e:
-        # Log the actual exception for debugging
-        import traceback
-        print(f"Error in run_backtest: {str(e)}")
-        print(traceback.format_exc())
-        
-        # Return error but still with a valid structure
+        # Log the error but still return a valid response
+        print(f"Error in backtest: {str(e)}")
         return {
             "metrics": {"error": str(e)},
             "trades": []
